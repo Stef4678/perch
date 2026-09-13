@@ -9,9 +9,9 @@
 
    Run:  node tools/check.mjs
    ========================================================================== */
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { dirname, join, relative } from 'node:path';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const html = readFileSync(join(root, 'index.html'), 'utf8');
@@ -194,6 +194,66 @@ if (!u) {
     const icon = u.ICONS && Object.keys(u.ICONS);
     if (icon && icon.length >= 25) pass(icon.length + ' inline icons defined');
     else fail('icon set looks incomplete (' + (icon ? icon.length : 0) + ')');
+}
+
+/* ── 5: dist package integrity ── */
+// dist/ is a committed copy of the runtime files, so it can drift. Everything
+// here exists to make drift impossible to miss.
+console.log('\n[5] dist package');
+
+const distDir = join(root, 'dist');
+
+function listFiles(dir, base) {
+    const out = [];
+    const walk = (current) => {
+        for (const entry of readdirSync(current, { withFileTypes: true })) {
+            const full = join(current, entry.name);
+            if (entry.isDirectory()) walk(full);
+            else out.push(relative(base || dir, full).replace(/\\/g, '/'));
+        }
+    };
+    walk(dir);
+    return out.sort();
+}
+
+if (!existsSync(distDir)) {
+    fail('dist/ is missing — run: node tools/make-dist.mjs');
+} else {
+    const distFiles = listFiles(distDir);
+
+    const forbidden = distFiles.filter((f) => f.startsWith('tools/') || f.startsWith('assets/') || f === '.gitignore');
+    if (forbidden.length) fail('dist/ contains development files: ' + forbidden.join(', '));
+    else pass('dist/ carries no development tooling or marketing assets');
+
+    let drifted = 0;
+    let identical = 0;
+    for (const rel of distFiles) {
+        const source = join(root, rel);
+        if (!existsSync(source)) { fail('dist/' + rel + ' has no counterpart in the source tree'); drifted++; continue; }
+        if (!readFileSync(source).equals(readFileSync(join(distDir, rel)))) {
+            fail('dist/' + rel + ' differs from its source — rebuild with node tools/make-dist.mjs');
+            drifted++;
+        } else identical++;
+    }
+    if (!drifted) pass(identical + ' packaged files are byte-identical to their sources');
+
+    // A new source file that never made it into the package is the quiet case.
+    const sourceJs = listFiles(join(root, 'js')).map((f) => 'js/' + f);
+    const distJs = distFiles.filter((f) => f.startsWith('js/'));
+    const missingJs = sourceJs.filter((f) => distJs.indexOf(f) === -1);
+    if (missingJs.length) fail('source files missing from dist/: ' + missingJs.join(', '));
+    else pass('all ' + sourceJs.length + ' js modules are present in dist/');
+
+    for (const required of ['manifest.json', 'index.html', 'logo.png', 'css/app.css']) {
+        if (distFiles.indexOf(required) === -1) fail('dist/ is missing ' + required);
+    }
+
+    const distManifest = JSON.parse(readFileSync(join(distDir, 'manifest.json'), 'utf8'));
+    if (distManifest.version !== manifest.version) {
+        fail('dist/manifest.json is version ' + distManifest.version + ', source is ' + manifest.version);
+    } else {
+        pass('dist/manifest.json is version ' + distManifest.version);
+    }
 }
 
 /* ── summary ── */
