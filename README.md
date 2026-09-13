@@ -72,6 +72,9 @@ last attach wrote, the page's own console errors and a log tail.
 2. **Put it somewhere permanent**, e.g. `Documents/Eagle plugins/perch`. Eagle loads the plugin
    from this path, so don't leave it in a temp folder or inside your Downloads.
 
+   If you only want the plugin and not the development tooling, use **`dist/`** — that is the
+   package-ready copy (see [Packaging](#packaging)).
+
 3. **Add it to Eagle** — open Eagle, click the **Plugin** button in the toolbar, then
    **Developer Options** and import/create a plugin pointed at this folder. Alternatively use
    **Pack Plugin** to produce a `.eagleplugin` file and open that.
@@ -267,6 +270,9 @@ js/library.js          Eagle picker: folders, filters, search, paged thumbnail g
 js/shelf.js            the attachment shelf + P.actions (drag, copy, reveal, tag, self-test)
 js/browser.js          tabs, omnibox, per-tab history, start page, Eagle round-trips
 js/app.js              bootstrap, theme, window controls, shortcuts, settings, diagnostics
+assets/                cover art and interface screenshots — not shipped
+dist/                  package-ready copy of the plugin (generated, committed)
+tools/make-dist.mjs    rebuilds dist/ from the source tree
 tools/make-logo.mjs    regenerates logo.png (geometry + zlib, no image libraries)
 tools/check.mjs        static checks: element ids, assets, manifest, CSS invariants
 tools/smoke.mjs        boots the real code against a DOM shim and drives the main flows
@@ -278,18 +284,26 @@ engine → library → shelf → browser → app`.
 **Development checks**
 
 ```bash
-node tools/check.mjs   # ids referenced by JS exist in the DOM, assets present, manifest
-                       # complete, shell grid pinned, button labels not squashable, helpers behave
-node tools/smoke.mjs   # ~160 assertions: boots the app against a DOM shim and drives library
-                       # paging, shelving, tabs, engine switching, attach routes, self-test,
-                       # diagnostics and the failure paths
+node tools/make-dist.mjs   # rebuild dist/ after any source change (check.mjs fails if it drifts)
+node tools/check.mjs       # ids referenced by JS exist in the DOM, assets present, manifest
+                           # complete, shell grid pinned, button labels not squashable,
+                           # dist/ byte-identical to source, helpers behave
+node tools/smoke.mjs       # ~160 assertions: boots the app against a DOM shim and drives library
+                           # paging, shelving, tabs, engine switching, attach routes, self-test,
+                           # diagnostics and the failure paths
 ```
 
 `tools/smoke.mjs` is deliberately honest about its limits: it cannot test real `<webview>`
 rendering, the Eagle APIs, native drag, the OS clipboard or `capturePage`.
 
-**Packaging for the Eagle Plugin Center:** delete `tools/` first — reviewers flag development
-artefacts in a package.
+**Packaging**
+
+`dist/` **is** the package: it holds the runtime files, licence and readme, with `tools/`,
+`assets/` and `.gitignore` removed. Point Eagle at `dist/` — or run Eagle's *Pack Plugin* on
+it — when publishing, and re-run `tools/make-dist.mjs` after any source change. `dist/` is
+committed on purpose, and `tools/check.mjs` fails if it ever drifts from the source tree, so a
+stale package cannot slip through. Release archives are attached to the GitHub release rather
+than committed.
 
 ---
 
