@@ -82,6 +82,19 @@ try {
     fail('manifest logo ' + manifest.logo + ' is not on disk (run: node tools/make-logo.mjs)');
 }
 
+// Eagle rejects a plugin id that is not a UUID. The manifest docs still show
+// examples like "LBCZE8V6LPCKD", which is stale — the validator wants a UUID.
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+if (typeof manifest.id !== 'string' || !manifest.id.trim()) {
+    fail('manifest.json has no id');
+} else if (!UUID.test(manifest.id)) {
+    fail('manifest id "' + manifest.id + '" is not a UUID — Eagle rejects any other format');
+} else if (/^0{8}-0{4}-0{4}-0{4}-0{12}$/.test(manifest.id)) {
+    fail('manifest id is the nil UUID');
+} else {
+    pass('manifest id is a UUID (' + manifest.id + ')');
+}
+
 // The plugin version is duplicated in app.js so Diagnostics always has one to
 // show. If they drift, "which code am I running?" becomes unanswerable.
 const appSource = readFileSync(join(root, 'js/app.js'), 'utf8');

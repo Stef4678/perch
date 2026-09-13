@@ -84,8 +84,9 @@ last attach wrote, the page's own console errors and a log tail.
 
 Notes:
 
-- The manifest uses the id `PERCHBROWSER1`. If Eagle complains, change `id` in `manifest.json` to
-  any unique string (Eagle's *Create Plugin* generates one).
+- **The plugin `id` is a UUID and must stay fixed.** Eagle rejects any other format, and changing
+  it after release makes the plugin a different plugin to Eagle — existing installs would not see
+  updates. `tools/check.mjs` enforces the format; never edit it casually.
 - Set `"devTools": true` in `manifest.json` for a Chromium devtools window while developing. It
   ships as `false`.
 - **Preview without Eagle:** open `index.html` in any Chromium browser. The Eagle bridge falls back
