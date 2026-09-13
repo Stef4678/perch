@@ -1,45 +1,35 @@
 /* ============================================================================
    Perch — tools/make-dist.mjs
-   Builds dist/: the plugin exactly as it should be packaged.
+   Builds dist/perch-<version>.eagleplugin — the installable Eagle package.
 
-   An Eagle plugin has no build step — the repository root *is* the plugin — so
-   dist/ is not a compilation output. It is the shipping subset: the runtime
-   files only, with the development tooling and marketing assets removed, which
-   is what you point Eagle at (or zip) when publishing.
+   The repository root *is* the plugin (there is no build step), so this does not
+   compile anything: it collects the runtime files, packs them into a ZIP with
+   manifest.json at the archive root, and writes it with Eagle's extension.
+   Development tooling, marketing assets and version control stay out.
 
    Run:  node tools/make-dist.mjs
    ========================================================================== */
-import { readFileSync, mkdirSync, cpSync, statSync, readdirSync, unlinkSync, rmdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, unlinkSync, rmdirSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, join, relative } from 'node:path';
+import { dirname, join } from 'node:path';
+
+import { createZip } from './zip.mjs';
+import { packageEntries, packageName, EXCLUDED } from './package-files.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = join(root, 'dist');
 
-/** Everything the plugin needs at runtime, plus its licence and readme. */
-const INCLUDE = [
-    'manifest.json',
-    'index.html',
-    'logo.png',
-    'LICENSE',
-    'README.md',
-    'css',
-    'js'
-];
-
-/** Deliberately absent: tools/ (dev checks), assets/ (cover art), .gitignore. */
-const EXCLUDE_NOTE = ['tools/', 'assets/', '.gitignore', '.git/'];
-
-/* ── sanity-check the source before building anything ── */
+/* ── the manifest is the source of truth for the package name ── */
 
 const manifest = JSON.parse(readFileSync(join(root, 'manifest.json'), 'utf8'));
-const appSource = readFileSync(join(root, 'js/app.js'), 'utf8');
-const appVersion = (appSource.match(/const PERCH_VERSION = '([^']+)'/) || [])[1];
-
 if (!manifest.version) {
     console.error('manifest.json has no version — refusing to build');
     process.exit(1);
 }
+
+// The runtime reports this same version in Diagnostics; drift would mean the
+// plugin cannot tell the user which build they are running.
+const appVersion = (readFileSync(join(root, 'js/app.js'), 'utf8').match(/const PERCH_VERSION = '([^']+)'/) || [])[1];
 if (appVersion !== manifest.version) {
     console.error('version mismatch: manifest.json says ' + manifest.version +
                   ', js/app.js says ' + (appVersion || '(missing)'));
@@ -47,96 +37,42 @@ if (appVersion !== manifest.version) {
     process.exit(1);
 }
 
-/* ── build ── */
+/* ── pack ── */
 
-/**
- * Sync rather than wipe-and-recreate: deleting the dist directory outright hits
- * EPERM under some Windows sandboxes, and a sync is the better semantic anyway —
- * stale files from a previous build must not survive, but nothing else needs to
- * be destroyed. Prune to the expected set first, then copy over it.
- */
-
-function walkFiles(dir, base, out) {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-        const full = join(dir, entry.name);
-        if (entry.isDirectory()) walkFiles(full, base, out);
-        else out.push(relative(base, full).replace(/\\/g, '/'));
-    }
-    return out;
-}
-
-/** The exact set of files dist/ should contain, derived from the source tree. */
-const expected = new Set();
-for (const entry of INCLUDE) {
-    const from = join(root, entry);
-    try {
-        if (!statSync(from)) throw new Error('missing');
-    } catch (e) {
-        console.error('missing from the source tree: ' + entry);
-        process.exit(1);
-    }
-    if (statSync(from).isDirectory()) {
-        for (const rel of walkFiles(from, root, [])) expected.add(rel);
-    } else {
-        expected.add(entry);
-    }
-}
+const entries = packageEntries(root);
+const archive = createZip(entries);
+const target = join(dist, packageName(manifest.version));
 
 mkdirSync(dist, { recursive: true });
 
-/* Prune anything a previous build left behind. */
-if (readdirSync(dist).length) {
-    let pruned = 0;
-    for (const rel of walkFiles(dist, dist, [])) {
-        if (!expected.has(rel)) {
-            unlinkSync(join(dist, rel));
-            console.log('  pruned ' + rel);
-            pruned++;
-        }
+// Anything in dist/ that is not this build is a previous artefact — including
+// the unpacked copy an earlier version of this tool produced. Remove the files
+// individually; deleting the directory itself is unreliable under some sandboxes.
+let removed = 0;
+for (const name of readdirSync(dist)) {
+    if (name === packageName(manifest.version)) continue;
+    const full = join(dist, name);
+    if (statSync(full).isDirectory()) {
+        for (const inner of readdirSync(full)) unlinkSync(join(full, inner));
+        try { rmdirSync(full); } catch (e) { /* ignore */ }
+    } else {
+        unlinkSync(full);
     }
-    // Tidy directories left empty by pruning; failure here is harmless.
-    const dirs = [];
-    const collectDirs = (dir) => {
-        for (const entry of readdirSync(dir, { withFileTypes: true })) {
-            if (entry.isDirectory()) {
-                const full = join(dir, entry.name);
-                collectDirs(full);
-                dirs.push(full);
-            }
-        }
-    };
-    collectDirs(dist);
-    for (const dir of dirs) {
-        try { if (!readdirSync(dir).length) rmdirSync(dir); } catch (e) { /* ignore */ }
-    }
-    if (!pruned) console.log('  nothing to prune');
+    console.log('  removed stale ' + name);
+    removed++;
 }
 
-for (const entry of INCLUDE) {
-    cpSync(join(root, entry), join(dist, entry), { recursive: true });
+writeFileSync(target, archive);
+
+/* ── report ── */
+
+console.log('dist/' + packageName(manifest.version) + '  (' + manifest.name + ' ' + manifest.version + ')');
+let raw = 0;
+for (const entry of entries) {
+    raw += entry.data.length;
+    console.log('  ' + entry.name.padEnd(24) + (entry.data.length / 1024).toFixed(1) + ' KB');
 }
-
-/** Walk dist and report what was produced. */
-let files = 0;
-let bytes = 0;
-
-function walk(dir) {
-    for (const name of readdirSync(dir).sort()) {
-        const full = join(dir, name);
-        const stat = statSync(full);
-        if (stat.isDirectory()) {
-            walk(full);
-        } else {
-            files++;
-            bytes += stat.size;
-            console.log('  ' + relative(dist, full).replace(/\\/g, '/') +
-                        '  ' + (stat.size / 1024).toFixed(1) + ' KB');
-        }
-    }
-}
-
-console.log('dist/ — Perch ' + manifest.version + ' (' + manifest.name + ')');
-walk(dist);
 console.log('');
-console.log(files + ' files, ' + (bytes / 1024).toFixed(0) + ' KB');
-console.log('excluded on purpose: ' + EXCLUDE_NOTE.join(', '));
+console.log(entries.length + ' files, ' + (raw / 1024).toFixed(0) + ' KB raw → ' +
+            (archive.length / 1024).toFixed(0) + ' KB packed' + (removed ? ', ' + removed + ' stale item(s) removed' : ''));
+console.log('excluded on purpose: ' + EXCLUDED.join(', '));

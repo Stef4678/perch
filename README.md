@@ -72,8 +72,9 @@ last attach wrote, the page's own console errors and a log tail.
 2. **Put it somewhere permanent**, e.g. `Documents/Eagle plugins/perch`. Eagle loads the plugin
    from this path, so don't leave it in a temp folder or inside your Downloads.
 
-   If you only want the plugin and not the development tooling, use **`dist/`** — that is the
-   package-ready copy (see [Packaging](#packaging)).
+   If you only want the built plugin rather than the source, use
+   **`dist/perch-<version>.eagleplugin`** — open or import that file from Eagle's plugin panel
+   (see [Packaging](#packaging)).
 
 3. **Add it to Eagle** — open Eagle, click the **Plugin** button in the toolbar, then
    **Developer Options** and import/create a plugin pointed at this folder. Alternatively use
@@ -271,10 +272,12 @@ js/shelf.js            the attachment shelf + P.actions (drag, copy, reveal, tag
 js/browser.js          tabs, omnibox, per-tab history, start page, Eagle round-trips
 js/app.js              bootstrap, theme, window controls, shortcuts, settings, diagnostics
 assets/                cover art and interface screenshots — not shipped
-dist/                  package-ready copy of the plugin (generated, committed)
-tools/make-dist.mjs    rebuilds dist/ from the source tree
+dist/                  the built package: perch-<version>.eagleplugin (committed)
+tools/make-dist.mjs    builds dist/ from the source tree
+tools/package-files.mjs  what belongs in a package, defined once
+tools/zip.mjs          dependency-free ZIP reader/writer used for packaging
 tools/make-logo.mjs    regenerates logo.png (geometry + zlib, no image libraries)
-tools/check.mjs        static checks: element ids, assets, manifest, CSS invariants
+tools/check.mjs        static checks: element ids, assets, manifest, CSS invariants, package
 tools/smoke.mjs        boots the real code against a DOM shim and drives the main flows
 ```
 
@@ -298,12 +301,21 @@ rendering, the Eagle APIs, native drag, the OS clipboard or `capturePage`.
 
 **Packaging**
 
-`dist/` **is** the package: it holds the runtime files, licence and readme, with `tools/`,
-`assets/` and `.gitignore` removed. Point Eagle at `dist/` — or run Eagle's *Pack Plugin* on
-it — when publishing, and re-run `tools/make-dist.mjs` after any source change. `dist/` is
-committed on purpose, and `tools/check.mjs` fails if it ever drifts from the source tree, so a
-stale package cannot slip through. Release archives are attached to the GitHub release rather
-than committed.
+`dist/perch-<version>.eagleplugin` is the installable package: a ZIP with `manifest.json` at its
+root, holding the runtime files plus the licence and readme, and nothing else.
+
+```bash
+node tools/make-dist.mjs   # rebuild dist/perch-<version>.eagleplugin
+```
+
+It is committed on purpose, and `tools/check.mjs` opens it on every run. The check fails if the
+package drifts from the source, loses a module, reports the wrong version, or gains a file that
+must not ship — development tooling, marketing assets, nested archives or credentials, all of
+which Eagle's package criteria reject. A stale package cannot slip through.
+
+Eagle's own **Pack Plugin** builds the same container from the loaded plugin folder and is the
+authoritative way to produce one; if you change `id` in `manifest.json`, prefer it over this
+script. The archive is also attached to each GitHub release.
 
 ---
 

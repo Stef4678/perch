@@ -1,0 +1,10 @@
+# Keep text files at LF on every platform. The .eagleplugin in dist/ is a
+# committed artefact whose contents are compared byte-for-byte against the
+# source, so mixed line endings would make the package irreproducible.
+* text=auto eol=lf
+
+# Never rewrite these.
+*.png binary
+*.jpg binary
+*.eagleplugin binary
+*.eaglepack binary

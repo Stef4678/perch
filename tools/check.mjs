@@ -11,7 +11,10 @@
    ========================================================================== */
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, join, relative } from 'node:path';
+import { dirname, join } from 'node:path';
+
+import { readZip } from './zip.mjs';
+import { packageName, runtimeFiles, isForbiddenEntry } from './package-files.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const html = readFileSync(join(root, 'index.html'), 'utf8');
@@ -196,63 +199,78 @@ if (!u) {
     else fail('icon set looks incomplete (' + (icon ? icon.length : 0) + ')');
 }
 
-/* ── 5: dist package integrity ── */
-// dist/ is a committed copy of the runtime files, so it can drift. Everything
-// here exists to make drift impossible to miss.
-console.log('\n[5] dist package');
+/* ── 5: package integrity ── */
+// dist/ holds one committed .eagleplugin, so it can drift from the source it was
+// built from. Everything here makes that drift impossible to miss — and opening
+// the archive also proves it is a readable package and not a corrupt file.
+console.log('\n[5] .eagleplugin package');
 
 const distDir = join(root, 'dist');
-
-function listFiles(dir, base) {
-    const out = [];
-    const walk = (current) => {
-        for (const entry of readdirSync(current, { withFileTypes: true })) {
-            const full = join(current, entry.name);
-            if (entry.isDirectory()) walk(full);
-            else out.push(relative(base || dir, full).replace(/\\/g, '/'));
-        }
-    };
-    walk(dir);
-    return out.sort();
-}
+const pkgName = packageName(manifest.version);
+const pkgPath = join(distDir, pkgName);
 
 if (!existsSync(distDir)) {
     fail('dist/ is missing — run: node tools/make-dist.mjs');
 } else {
-    const distFiles = listFiles(distDir);
-
-    const forbidden = distFiles.filter((f) => f.startsWith('tools/') || f.startsWith('assets/') || f === '.gitignore');
-    if (forbidden.length) fail('dist/ contains development files: ' + forbidden.join(', '));
-    else pass('dist/ carries no development tooling or marketing assets');
-
-    let drifted = 0;
-    let identical = 0;
-    for (const rel of distFiles) {
-        const source = join(root, rel);
-        if (!existsSync(source)) { fail('dist/' + rel + ' has no counterpart in the source tree'); drifted++; continue; }
-        if (!readFileSync(source).equals(readFileSync(join(distDir, rel)))) {
-            fail('dist/' + rel + ' differs from its source — rebuild with node tools/make-dist.mjs');
-            drifted++;
-        } else identical++;
-    }
-    if (!drifted) pass(identical + ' packaged files are byte-identical to their sources');
-
-    // A new source file that never made it into the package is the quiet case.
-    const sourceJs = listFiles(join(root, 'js')).map((f) => 'js/' + f);
-    const distJs = distFiles.filter((f) => f.startsWith('js/'));
-    const missingJs = sourceJs.filter((f) => distJs.indexOf(f) === -1);
-    if (missingJs.length) fail('source files missing from dist/: ' + missingJs.join(', '));
-    else pass('all ' + sourceJs.length + ' js modules are present in dist/');
-
-    for (const required of ['manifest.json', 'index.html', 'logo.png', 'css/app.css']) {
-        if (distFiles.indexOf(required) === -1) fail('dist/ is missing ' + required);
-    }
-
-    const distManifest = JSON.parse(readFileSync(join(distDir, 'manifest.json'), 'utf8'));
-    if (distManifest.version !== manifest.version) {
-        fail('dist/manifest.json is version ' + distManifest.version + ', source is ' + manifest.version);
+    const distEntries = readdirSync(distDir);
+    if (distEntries.length !== 1 || distEntries[0] !== pkgName) {
+        fail('dist/ should contain only ' + pkgName + ', found: ' + distEntries.join(', ') +
+             ' — run: node tools/make-dist.mjs');
     } else {
-        pass('dist/manifest.json is version ' + distManifest.version);
+        pass('dist/ contains exactly one artefact: ' + pkgName);
+    }
+}
+
+if (!existsSync(pkgPath)) {
+    fail(pkgName + ' is missing — run: node tools/make-dist.mjs');
+} else {
+    let entries = null;
+    try {
+        entries = readZip(readFileSync(pkgPath));
+    } catch (e) {
+        fail(pkgName + ' is not a readable archive: ' + e.message);
+    }
+
+    if (entries) {
+        const names = entries.map((e) => e.name);
+        pass(pkgName + ' is a valid archive — ' + entries.length + ' entries, ' +
+             (readFileSync(pkgPath).length / 1024).toFixed(0) + ' KB');
+
+        if (names.indexOf('manifest.json') === -1) fail('manifest.json is not at the package root');
+        else pass('manifest.json sits at the package root');
+
+        // Eagle rejects development artefacts, nested archives and credentials.
+        const forbidden = names.filter(isForbiddenEntry);
+        if (forbidden.length) fail('package carries files that must not ship: ' + forbidden.join(', '));
+        else pass('no tooling, marketing assets, nested archives or credentials inside');
+
+        const expected = runtimeFiles(root);
+        const missing = expected.filter((n) => names.indexOf(n) === -1);
+        const extra = names.filter((n) => expected.indexOf(n) === -1);
+        if (missing.length) fail('missing from the package: ' + missing.join(', '));
+        if (extra.length) fail('unexpected in the package: ' + extra.join(', '));
+        if (!missing.length && !extra.length) {
+            pass('exactly the ' + expected.length + ' runtime files, nothing else');
+        }
+
+        let drift = 0;
+        let identical = 0;
+        for (const entry of entries) {
+            const source = join(root, entry.name);
+            if (!existsSync(source)) { fail('packaged ' + entry.name + ' has no source file'); drift++; continue; }
+            if (!readFileSync(source).equals(entry.data)) {
+                fail('packaged ' + entry.name + ' differs from its source — rebuild with node tools/make-dist.mjs');
+                drift++;
+            } else identical++;
+        }
+        if (!drift) pass(identical + ' packaged files are byte-identical to their sources');
+
+        const packagedManifest = entries.filter((e) => e.name === 'manifest.json')[0];
+        if (packagedManifest) {
+            const version = JSON.parse(packagedManifest.data.toString('utf8')).version;
+            if (version !== manifest.version) fail('packaged manifest is version ' + version + ', source is ' + manifest.version);
+            else pass('packaged manifest.json is version ' + version);
+        }
     }
 }
 
