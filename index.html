@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <title>Perch</title>
+    <link rel="stylesheet" href="css/app.css">
+</head>
+
+<body>
+    <div class="app" id="app" data-lib="open" data-shelf="open">
+
+        <!-- ══════════════════════════ Title bar ══════════════════════════ -->
+        <header class="titlebar" id="titlebar">
+            <div class="wc wc-mac" id="wcMac">
+                <button class="mac-dot close" id="btnCloseMac" title="Close"></button>
+                <button class="mac-dot min" id="btnMinMac" title="Minimize"></button>
+                <button class="mac-dot max" id="btnMaxMac" title="Zoom"></button>
+            </div>
+
+            <div class="brand">
+                <span class="brand-mark" id="brandMark"></span>
+                <span class="brand-name">Perch</span>
+                <span class="brand-sub" id="brandVersion">v—</span>
+            </div>
+
+            <div class="drag-region" id="dragRegion"></div>
+
+            <span class="engine-pill" id="enginePill" title="Rendering engine in use">engine</span>
+
+            <button class="icon-btn" id="btnSettings" data-icon="settings" title="Settings"></button>
+            <button class="icon-btn" id="btnTheme" data-icon="moon" title="Switch theme"></button>
+
+            <div class="wc wc-win" id="wcWin">
+                <button class="icon-btn win" id="btnMinWin" data-icon="minimize" title="Minimize"></button>
+                <button class="icon-btn win" id="btnMaxWin" data-icon="maximize" title="Maximize"></button>
+                <button class="icon-btn win danger" id="btnCloseWin" data-icon="close" title="Close"></button>
+            </div>
+        </header>
+
+        <!-- ══════════════════════════ Tab strip ══════════════════════════ -->
+        <div class="tabstrip" id="tabstrip">
+            <div class="tabs" id="tabs" role="tablist"></div>
+            <button class="icon-btn" id="btnNewTab" data-icon="plus" title="New tab (Ctrl+T)"></button>
+            <div class="strip-sep"></div>
+            <button class="pill-btn" id="btnToggleLibrary" title="Toggle the Eagle library panel (Ctrl+B)">
+                <span data-icon="layers"></span><span>Library</span>
+            </button>
+            <button class="pill-btn" id="btnToggleShelf" title="Toggle the attachment shelf (Ctrl+Shift+A)">
+                <span data-icon="paperclip"></span><span>Shelf</span><b class="badge" id="shelfBadge">0</b>
+            </button>
+        </div>
+
+        <!-- ══════════════════════════ Toolbar ══════════════════════════ -->
+        <div class="toolbar" id="toolbar">
+            <button class="icon-btn" id="btnBack" data-icon="back" title="Back (Alt+Left)"></button>
+            <button class="icon-btn" id="btnForward" data-icon="forward" title="Forward (Alt+Right)"></button>
+            <button class="icon-btn" id="btnReload" data-icon="reload" title="Reload (F5)"></button>
+            <button class="icon-btn" id="btnHome" data-icon="home" title="Start page"></button>
+
+            <div class="omni" id="omni">
+                <span class="omni-lock" id="omniLock" data-icon="globe" title="Connection"></span>
+                <input id="addressInput" class="omni-input" type="text" spellcheck="false" autocomplete="off"
+                       placeholder="Search the web or enter a URL">
+                <button class="icon-btn tiny" id="btnOmniGo" data-icon="arrow-right" title="Go"></button>
+                <button class="icon-btn tiny" id="btnQuickLinks" data-icon="star" title="Quick links"></button>
+                <div class="menu quick-menu" id="quickMenu" hidden></div>
+                <div class="progress" id="progressBar" hidden><i></i></div>
+            </div>
+
+            <button class="pill-btn accent" id="btnSaveToEagle" title="Save this page to Eagle as a bookmark">
+                <span data-icon="bookmark"></span><span>Save to Eagle</span>
+            </button>
+            <button class="icon-btn" id="btnCapture" data-icon="camera" title="Capture this view into Eagle"></button>
+            <button class="icon-btn" id="btnOpenExternal" data-icon="external" title="Open this page in your normal browser — needed for sites that forbid embedding"></button>
+            <button class="icon-btn" id="btnShortcuts" data-icon="help" title="Keyboard shortcuts (Ctrl+/)"></button>
+        </div>
+
+        <!-- Non-blocking notice strip: a page failed, but the pane stays usable -->
+        <div class="notice" id="loadNotice" hidden>
+            <span class="notice-icon" data-icon="shield"></span>
+            <span class="notice-text" id="loadNoticeText"></span>
+            <button class="ghost-btn tiny" id="btnNoticeExternal">
+                <span data-icon="external"></span><span>Open externally</span>
+            </button>
+            <button class="ghost-btn tiny" id="btnNoticeReload">
+                <span data-icon="reload"></span><span>Reload</span>
+            </button>
+            <button class="icon-btn tiny" id="btnNoticeClose" data-icon="close" title="Dismiss"></button>
+        </div>
+
+        <!-- ══════════════════════════ Workspace ══════════════════════════ -->
+        <main class="workspace">
+            <aside class="panel library" id="libraryPanel">
+                <div class="panel-head">
+                    <div class="panel-title">Eagle library</div>
+                    <button class="icon-btn tiny" id="btnLibRefresh" data-icon="reload" title="Reload library data"></button>
+                </div>
+
+                <div class="search-field">
+                    <span class="sf-icon" data-icon="search"></span>
+                    <input id="libSearch" type="text" placeholder="Search name, tag, keyword…" spellcheck="false">
+                    <button class="icon-btn tiny" id="btnLibSearchClear" data-icon="close" title="Clear search"></button>
+                </div>
+
+                <div class="chips-row" id="libFilters">
+                    <button class="chip-filter active" data-kind="all">All</button>
+                    <button class="chip-filter" data-kind="image">Images</button>
+                    <button class="chip-filter" data-kind="video">Video</button>
+                    <button class="chip-filter" data-kind="audio">Audio</button>
+                    <button class="chip-filter" data-kind="doc">Docs</button>
+                    <button class="chip-filter" data-kind="selected">Selected</button>
+                </div>
+
+                <div class="lib-body">
+                    <div class="folder-tree" id="libFolderList"></div>
+                    <div class="lib-scroll" id="libScroll">
+                        <div class="lib-grid" id="libGrid"></div>
+                        <div class="lib-more" id="libMore" hidden>
+                            <button class="ghost-btn" id="btnLibMore">Load more</button>
+                        </div>
+                        <div class="empty" id="libEmpty" hidden></div>
+                    </div>
+                </div>
+
+                <div class="panel-foot">
+                    <div class="foot-status" id="libStatus">Loading…</div>
+                    <div class="foot-actions">
+                        <button class="ghost-btn" id="btnGrabSelection" title="Take whatever is selected inside Eagle right now">Use selection</button>
+                        <button class="accent-btn" id="btnAddChecked" disabled>Add <span id="checkedCount">0</span></button>
+                    </div>
+                </div>
+            </aside>
+
+            <section class="stage" id="stage">
+                <div class="views" id="viewHost"></div>
+
+                <!-- New-tab start page -->
+                <div class="startpage" id="startPage" hidden>
+                    <div class="start-glow"></div>
+                    <div class="start-inner">
+                        <div class="start-brand">
+                            <span class="brand-mark" id="startMark"></span>
+                            <div>
+                                <h1 id="startGreeting">Good to see you</h1>
+                                <p>Browse anything, then attach files straight from your Eagle library.</p>
+                            </div>
+                        </div>
+
+                        <form class="start-search" id="startForm">
+                            <span class="ss-icon" data-icon="search"></span>
+                            <input id="startSearch" type="text" placeholder="Search the web or enter a URL"
+                                   spellcheck="false" autocomplete="off">
+                            <button class="accent-btn" id="btnStartGo" type="submit">Go</button>
+                        </form>
+
+                        <div class="start-section">
+                            <div class="start-section-head">
+                                <h2>Quick links</h2>
+                                <span class="hint">Right-click a tile to remove it</span>
+                            </div>
+                            <div class="tiles" id="quickTiles"></div>
+                        </div>
+
+                        <div class="start-section">
+                            <div class="start-section-head">
+                                <h2>Recent</h2>
+                                <button class="ghost-btn tiny" id="btnClearRecent">Clear</button>
+                            </div>
+                            <div class="recent" id="recentList"></div>
+                        </div>
+
+                        <div class="start-tip" id="startTip"></div>
+                    </div>
+                </div>
+
+                <!-- Shown when a site refuses to be framed -->
+                <div class="blocked" id="blockedOverlay" hidden>
+                    <div class="blocked-card">
+                        <div class="blocked-icon" data-icon="shield"></div>
+                        <h3>This site refuses to be embedded</h3>
+                        <p id="blockedText">The site sends headers that forbid being displayed inside another app.</p>
+                        <div class="blocked-actions">
+                            <button class="accent-btn" id="btnBlockedExternal">
+                                <span data-icon="external"></span><span>Open in your browser</span>
+                            </button>
+                            <button class="ghost-btn" id="btnBlockedRetry">
+                                <span data-icon="reload"></span><span>Try again</span>
+                            </button>
+                            <button class="ghost-btn" id="btnBlockedRebuild">
+                                <span data-icon="window"></span><span>Rebuild view</span>
+                            </button>
+                        </div>
+                        <p class="blocked-note" id="blockedNote"></p>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- ══════════════════════════ Attachment shelf ══════════════════════════ -->
+        <footer class="shelf" id="shelf">
+            <div class="shelf-head">
+                <button class="icon-btn tiny" id="btnShelfCollapse" data-icon="chevron-down" title="Collapse the shelf"></button>
+                <span class="shelf-title">Attachments</span>
+                <b class="badge" id="shelfCount">0</b>
+                <span class="shelf-hint" id="shelfHint">Drag a card into the page, or copy a file and paste it with Ctrl/⌘ + V</span>
+                <div class="shelf-actions">
+                    <button class="ghost-btn" id="btnShelfTagPage" title="Add the current page's domain as a tag on every shelf item">
+                        <span data-icon="tag"></span><span>Tag with page</span>
+                    </button>
+                    <button class="ghost-btn" id="btnShelfCopyAll" title="Copy every shelf file to the clipboard">
+                        <span data-icon="copy"></span><span>Copy all files</span>
+                    </button>
+                    <button class="ghost-btn danger" id="btnShelfClear" title="Empty the shelf">
+                        <span data-icon="trash"></span><span>Clear</span>
+                    </button>
+                </div>
+            </div>
+            <div class="shelf-items" id="shelfItems"></div>
+            <div class="shelf-empty" id="shelfEmpty">
+                Nothing on the shelf yet. Pick files from your Eagle library, then drag or paste them into the page.
+            </div>
+        </footer>
+
+        <div class="toasts" id="toasts"></div>
+        <div class="modal-root" id="modalRoot" hidden></div>
+    </div>
+
+    <script src="js/util.js"></script>
+    <script src="js/eagle-bridge.js"></script>
+    <script src="js/engine.js"></script>
+    <script src="js/library.js"></script>
+    <script src="js/shelf.js"></script>
+    <script src="js/browser.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
